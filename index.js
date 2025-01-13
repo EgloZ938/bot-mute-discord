@@ -3,6 +3,15 @@ const { Client, Events, GatewayIntentBits, Collection, REST, Routes, SlashComman
 const fs = require('fs').promises;
 const path = require('path');
 
+function generateDefaultAvatarURL(servername) {
+    const letter = servername.charAt(0).toUpperCase();
+    // On utilise la couleur bleu-violet de Discord par défaut (#5865F2)
+    const color = '5865F2';
+    const encodedLetter = encodeURIComponent(letter);
+
+    return `https://ui-avatars.com/api/?name=${encodedLetter}&color=fff&background=${color}&size=256&rounded=true&bold=true`;
+}
+
 // Création du client
 const client = new Client({
     intents: [
@@ -98,6 +107,8 @@ client.on(Events.InteractionCreate, async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
     const { commandName } = interaction;
+    const serverInitial = interaction.guild.name.charAt(0).toUpperCase();
+    const fallbackIconUrl = `https://api.dicebear.com/7.x/initials/svg?seed=${serverInitial}&backgroundColor=random`;
 
     // Gestion des nouvelles commandes admin
     if (commandName === 'addmessage') {
@@ -110,8 +121,18 @@ client.on(Events.InteractionCreate, async interaction => {
         messages[guildId].push(message);
         await saveMessages(messages);
 
+        const addMessageEmbed = new EmbedBuilder()
+            .setColor('#2ECC40') // Vert
+            .setTitle('✅ Message Ajouté')
+            .setDescription('Un nouveau message de démute a été ajouté avec succès !')
+            .addFields({
+                name: 'Nouveau message',
+                value: `\`${message}\``
+            })
+            .setTimestamp();
+
         await interaction.reply({
-            content: `Message ajouté avec succès: "${message}"`,
+            embeds: [addMessageEmbed],
             ephemeral: true
         });
     }
@@ -133,12 +154,22 @@ client.on(Events.InteractionCreate, async interaction => {
             });
         }
 
-        const messageList = messages[guildId]
-            .map((msg, index) => `${index + 1}. "${msg}"`)
-            .join('\n');
+        const listMessagesEmbed = new EmbedBuilder()
+            .setColor('#0074D9') // Bleu
+            .setTitle('📝 Liste des Messages de Démute')
+            .setDescription('Voici les messages disponibles pour le démute :')
+            .addFields(
+                messages[guildId].map((msg, index) => ({
+                    name: `Message ${index + 1}`,
+                    value: `\`${msg}\``,
+                    inline: false
+                }))
+            )
+            .setFooter({ text: 'Utilisez /deletemessage <numéro> pour supprimer un message' })
+            .setTimestamp();
 
         await interaction.reply({
-            content: `Messages de démute disponibles:\n${messageList}`,
+            embeds: [listMessagesEmbed],
             ephemeral: true
         });
     }
@@ -166,8 +197,19 @@ client.on(Events.InteractionCreate, async interaction => {
         messages[guildId].splice(index, 1);
         await saveMessages(messages);
 
+        const deleteMessageEmbed = new EmbedBuilder()
+            .setColor('#2ECC40') // Vert
+            .setTitle('🗑️ Message Supprimé')
+            .setDescription('Le message a été supprimé avec succès')
+            .addFields({
+                name: 'Message supprimé',
+                value: `\`${deletedMessage}\``,
+                inline: false
+            })
+            .setTimestamp();
+
         await interaction.reply({
-            content: `Message supprimé avec succès: "${deletedMessage}"`,
+            embeds: [deleteMessageEmbed],
             ephemeral: true
         });
     }
@@ -216,20 +258,66 @@ client.on(Events.InteractionCreate, async interaction => {
                 await member.voice.setMute(true);
             }
 
-            await interaction.reply(`${targetUser.username} a été mute!`);
+            // Message public de mute
+            const muteEmbed = new EmbedBuilder()
+                .setColor('#FF4136') // Rouge
+                .setTitle('🔇 Utilisateur Mute')
+                .setDescription(`**${member.displayName}** a été mute !`)
+                .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
+                .setTimestamp()
+                .setFooter({
+                    text: interaction.guild.name,
+                    iconURL: interaction.guild.iconURL({ dynamic: true }) || generateDefaultAvatarURL(interaction.guild.name)
+                });
+
+            await interaction.reply({ embeds: [muteEmbed] });
+
+            // Message privé pour le démute
+            const dmEmbed = new EmbedBuilder()
+                .setColor('#0074D9') // Bleu
+                .setTitle('🔄 Instructions de Démute')
+                .setDescription(`Tu as été mute sur le serveur **${interaction.guild.name}**.\nPour être démute, utilise la commande \`/demute\` avec **exactement** ce message :`)
+                .addFields({
+                    name: 'Message à copier',
+                    value: `\`${requiredMessage}\``,
+                    inline: false
+                })
+                .setThumbnail(interaction.guild.iconURL({ dynamic: true }) || generateDefaultAvatarURL(interaction.guild.name))
+                .setTimestamp()
+                .setFooter({
+                    text: '⚠️ Le message doit être copié exactement comme il est écrit',
+                    iconURL: interaction.guild.iconURL({ dynamic: true }) || generateDefaultAvatarURL(interaction.guild.name)
+                });
 
             try {
-                await targetUser.send(`Pour être démute, tu dois utiliser la commande /demute avec exactement ce message :\n\`${requiredMessage}\``);
+                await targetUser.send({ embeds: [dmEmbed] });
             } catch (dmError) {
+                const warningEmbed = new EmbedBuilder()
+                    .setColor('#FF851B') // Orange
+                    .setTitle('⚠️ Message Privé Non Envoyé')
+                    .setDescription(`Impossible d'envoyer un message privé à **${targetUser.username}**`)
+                    .addFields({
+                        name: 'Message de démute à transmettre',
+                        value: `\`${requiredMessage}\``,
+                        inline: false
+                    })
+                    .setFooter({ text: 'Veuillez communiquer ce message à l\'utilisateur' });
+
                 await interaction.followUp({
-                    content: `⚠️ Je n'ai pas pu envoyer de message privé à ${targetUser.username}. Voici le message qu'il doit écrire pour être démute :\n\`${requiredMessage}\``,
+                    embeds: [warningEmbed],
                     ephemeral: true
                 });
             }
         } catch (error) {
             console.error(error);
+            const muteErrorEmbed = new EmbedBuilder()
+                .setColor('#FF4136') // Rouge
+                .setTitle('❌ Erreur')
+                .setDescription('Une erreur est survenue lors du mute.')
+                .setTimestamp();
+
             await interaction.reply({
-                content: 'Une erreur est survenue lors du mute.',
+                embeds: [muteErrorEmbed],
                 ephemeral: true
             });
         }
@@ -241,8 +329,14 @@ client.on(Events.InteractionCreate, async interaction => {
         const mutedRole = interaction.guild.roles.cache.find(role => role.name === 'Muted');
 
         if (!member.roles.cache.has(mutedRole.id)) {
+            const notMutedEmbed = new EmbedBuilder()
+                .setColor('#FF851B') // Orange
+                .setTitle('❌ Non Mute')
+                .setDescription('Tu n\'es pas mute !')
+                .setFooter({ text: 'Cette commande est uniquement pour les utilisateurs mute' });
+
             return await interaction.reply({
-                content: 'Tu n\'es pas mute!',
+                embeds: [notMutedEmbed],
                 ephemeral: true
             });
         }
@@ -250,8 +344,19 @@ client.on(Events.InteractionCreate, async interaction => {
         const requiredMessage = requiredMessages.get(member.user.id);
 
         if (!requiredMessage) {
+            const noDemuteMessageEmbed = new EmbedBuilder()
+                .setColor('#FF4136') // Rouge
+                .setTitle('❌ Erreur de Mute')
+                .setDescription('Une erreur est survenue avec ton mute.')
+                .addFields({
+                    name: 'Solution',
+                    value: 'Demande à un administrateur de te mute à nouveau.',
+                    inline: false
+                })
+                .setTimestamp();
+
             return await interaction.reply({
-                content: 'Une erreur est survenue. Demande à un administrateur de te mute à nouveau.',
+                embeds: [noDemuteMessageEmbed],
                 ephemeral: true
             });
         }
@@ -269,9 +374,17 @@ client.on(Events.InteractionCreate, async interaction => {
                 const demuteEmbed = new EmbedBuilder()
                     .setColor('#2ECC40') // Vert
                     .setTitle('🔊 Utilisateur Démute')
-                    .setDescription(`**${member.user.username}** a été démute !`)
-                    .addFields({ name: 'Message utilisé', value: `\`${message}\`` })
-                    .setTimestamp();
+                    .setDescription(`**${member.displayName}** a été démute !`)
+                    .addFields({
+                        name: 'Message utilisé',
+                        value: `\`${message}\``
+                    })
+                    .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+                    .setTimestamp()
+                    .setFooter({
+                        text: interaction.guild.name,
+                        iconURL: interaction.guild.iconURL({ dynamic: true }) || generateDefaultAvatarURL(interaction.guild.name)
+                    });
 
                 await interaction.reply({ embeds: [demuteEmbed] });
             } catch (error) {
