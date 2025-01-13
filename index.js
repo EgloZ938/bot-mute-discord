@@ -81,7 +81,11 @@ const commands = [
             option.setName('index')
                 .setDescription('L\'index du message à supprimer (utiliser /listmessages pour voir les index)')
                 .setRequired(true)
-        )
+        ),
+    new SlashCommandBuilder()
+        .setName('help')
+        .setDescription('Affiche l\'aide et la configuration du bot')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
 ];
 
 // Enregistrement des commandes
@@ -412,6 +416,72 @@ client.on(Events.InteractionCreate, async interaction => {
                 ephemeral: true
             });
         }
+    }
+
+    // Ajouter aux commandes existantes
+    const commands = [
+        // ... autres commandes existantes ...,
+        new SlashCommandBuilder()
+            .setName('help')
+            .setDescription('Affiche l\'aide et la configuration du bot')
+            .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    ];
+
+    // Dans le gestionnaire de commandes, ajouter :
+    if (commandName === 'help') {
+        const helpEmbed = new EmbedBuilder()
+            .setColor('#0074D9')
+            .setTitle('📚 Guide du Bot Mute')
+            .setDescription('Voici tout ce que vous devez savoir pour configurer et utiliser le bot correctement.')
+            .addFields(
+                {
+                    name: '⚙️ Configuration Requise',
+                    value: [
+                        '1️⃣ Créez un rôle nommé exactement `Muted`',
+                        '2️⃣ Placez le rôle du bot au-dessus de tous les autres rôles dans les paramètres du serveur',
+                        '3️⃣ Configurez au moins un message de démute avec `/addmessage`',
+                        '4️⃣ Assurez-vous que le bot a les permissions : Gérer les rôles, Muter les membres'
+                    ].join('\n')
+                },
+                {
+                    name: '🛠️ Commandes Administrateur',
+                    value: [
+                        '`/mute <utilisateur>` - Mute un membre',
+                        '`/addmessage <message>` - Ajoute un message de démute',
+                        '`/listmessages` - Affiche tous les messages configurés',
+                        '`/deletemessage <index>` - Supprime un message de démute',
+                        '`/help` - Affiche ce message d\'aide'
+                    ].join('\n')
+                },
+                {
+                    name: '👥 Commandes Utilisateur',
+                    value: '`/demute <message>` - Permet à un utilisateur muté de se démuter en tapant le bon message'
+                },
+                {
+                    name: '🔄 Fonctionnement',
+                    value: [
+                        '1. Quand un admin mute quelqu\'un, un message aléatoire est choisi',
+                        '2. L\'utilisateur reçoit le message en MP',
+                        '3. Il doit utiliser `/demute` avec le message exact pour être démuté',
+                        '4. Le mute s\'applique aussi automatiquement en vocal'
+                    ].join('\n')
+                },
+                {
+                    name: '⚠️ Important',
+                    value: [
+                        '• Le rôle Muted doit bloquer la permission "Envoyer des messages" dans tous les salons',
+                        '• Si un utilisateur a ses MP fermés, le message sera envoyé dans le salon',
+                        '• Les messages de démute sont spécifiques à chaque serveur'
+                    ].join('\n')
+                }
+            )
+            .setTimestamp()
+            .setFooter({
+                text: interaction.guild.name,
+                iconURL: interaction.guild.iconURL({ dynamic: true }) || generateDefaultAvatarURL(interaction.guild.name)
+            });
+
+        await interaction.reply({ embeds: [helpEmbed], ephemeral: true });
     }
 });
 
